@@ -17,29 +17,41 @@ class DensErr(Dens2bBatt):
     uses the Battaglia et al (2013) model in a Gaussian likelihood function.
     """
 
-    def __init__(self, z, guess_density_field, temp_brightness_field, cov, sigma_prior, sigma_T, epsilon, actual_rhos, log_norm=False, one_d=True, delta_pos=1, delta_k=1, nsamples=1000, corner_plot="../STAT_IMAGE/z_8_pngs/testing_1D", plotsamples=True, emc=True):
+    def __init__(self, z, guess_density_field, temp_brightness_field, cov_likelihood, cov_prior, sigma_prior, sigma_T, epsilon, actual_rhos, sigma_perturb=0.1, log_norm=False, one_d=True, delta_pos=1, delta_k=1, nsamples=1000, corner_plot="../STAT_IMAGE/z_8_pngs/testing_1D", plotsamples=True, emc=True):
         self.z = z # setting the
         self.Tarr = temp_brightness_field # temperature brightness field we're trying to convert to density field
         self.prm_init = guess_density_field # initial guess for density field
         self.prm_curr = ""
-        self.cov = cov
+        self.cov_likelihood = cov_likelihood
         self.delta_k = delta_k
-        self.sigma_likelihood = np.sqrt(cov[0][0])
-        self.sigma_prior = sigma_prior
+        self.sigma_likelihood = np.sqrt(cov_likelihood[0][0])
+        self.sigma_D = sigma_prior
         self.sigma_T = sigma_T
         self.currentBatt = "" # This is instance of Dens2bBatt including current density to temperature brightness calculation
         self.delta_pos = delta_pos # this varies if the density field is not at the same scale TODO
         self.nsamples = nsamples
         self.epsilon = epsilon
         self.plotsamples = plotsamples
+        self.sigma_perturb = sigma_perturb
         self.log_norm = log_norm
         super().__init__(self.prm_init, self.delta_pos, self.z, one_d, False) # this is so we can access some parameters in Dens2bBatt that we need here
 
         if log_norm:
-            self.corner_plot = corner_plot + "_num_samples_{}_eps_{}_dvals_{}_sigmaT_{}_z_{}_CORRELATED_DENSITIES".format(self.nsamples,
+            self.cov_prior = cov_prior
+            # checks if cov matrix is diagonal
+            if np.count_nonzero(self.cov_prior - np.diag(np.diagonal(self.cov_prior))) != 0:
+
+                self.corner_plot = corner_plot + "_num_samples_{}_eps_{}_dvals_{}_sigmaT_{}_z_{}_CORRELATED_DENSITIES".format(self.nsamples,
                                                                                                      self.epsilon,
                                                                                                      len(self.prm_init),
                                                                                                      sigma_T, self.z)
+            else:
+                self.corner_plot = corner_plot + "_num_samples_{}_eps_{}_dvals_{}_sigmaT_{}_z_{}_UNCORR_DENSITIES".format(
+                    self.nsamples,
+                    self.epsilon,
+                    len(self.prm_init),
+                    sigma_T, self.z)
+
         else:
             self.corner_plot = corner_plot + "_num_samples_{}_eps_{}_dvals_{}_sigmaT_{}_z_{}".format(self.nsamples, self.epsilon, len(self.prm_init), sigma_T, self.z)
         # BE SURE TO DIFFERENTIATE BETWEEN THIS INSTANCE & INSTANCE OF CURRENT DENSITY BEING SAMPLED!
@@ -52,7 +64,7 @@ class DensErr(Dens2bBatt):
 
     def get_grad_prior(self):
         # TODO: check prior grad
-        self.prior_grad = -1/sigma_D**2 * self.prm_curr
+        self.prior_grad = -1/self.sigma_D**2 * self.prm_curr
         return self.prior_grad
 
     def get_gradients(self):
@@ -182,28 +194,47 @@ class DensErr(Dens2bBatt):
     def numeric_posterior(self, prm):
         # LOGGED
         self.prm_curr = prm
-
+        if np.min(self.prm_curr) < -1:
+            return -np.inf
 
         if self.one_d:
-            self.currentBatt = Dens2bBatt(prm, 1, z, one_d=True)
+            self.currentBatt = Dens2bBatt(prm, 1, self.z, one_d=True)
             Tb = self.currentBatt.get_temp_brightness()
-            if self.log_norm:
-                prior_rhos = -(0.5 / sigma_D ** 2) * np.sum((np.log(1+prm) ** 2))
+            if self.log_norm and self.emc:
+                #correlated prior
+                c = np.linalg.det(self.cov_prior)
+                # print("input prms {}".format(self.prm_curr))
+                log_norm_func = np.log(1 + self.prm_curr)
+                # print("log_norm_func {}".format(log_norm_func))
+                trans_prior = -(0.5) * log_norm_func.T
+                trans_prior_C = np.dot(trans_prior, np.linalg.inv(self.cov_prior))
+                trans_prior_C_prior = np.dot(trans_prior_C, log_norm_func)
+                # print("prior_rhos {}".format(trans_prior_C_prior))
+                prefactor_prior = 1 / (np.sqrt(2 * np.pi) * c)
+                prior_rhos = trans_prior_C_prior
+                # print("prefactor_prior {}".format(prefactor_prior))
 
             else:
-                prior_rhos = -(0.5 / sigma_D ** 2) * np.sum((prm ** 2))
-            prefactor_prior = 1 / (np.sqrt(2 * np.pi) * sigma_D) ** len(prm)
+                prior_rhos = -(0.5 / self.sigma_D ** 2) * np.sum((prm ** 2))
+                prefactor_prior = 1 / (np.sqrt(2 * np.pi) * self.sigma_D) ** len(prm)
 
+            # uncorrelated likelihood
             trans_X = (-0.5) * (Tb - self.Tarr).T
-            trans_X_C = np.dot(trans_X, np.linalg.inv(cov))
+            trans_X_C = np.dot(trans_X, np.linalg.inv(self.cov_likelihood))
             trans_X_C_X = np.dot(trans_X_C, (Tb - self.Tarr))
 
-            c = np.linalg.det(cov)
+            c = np.linalg.det(self.cov_likelihood)
             prefactor_likelihood = 1 / (np.sqrt(2 * np.pi) * c) ** len(self.Tarr)
+
             # prefactor = (prefactor_likelihood)
             # logp = prefactor + (trans_X_C_X)
+
             prefactor = (prefactor_likelihood + prefactor_prior)
+            # print("prefactor {}".format(prefactor))
+
             logp = prefactor + (prior_rhos + trans_X_C_X)
+            # print("logp {}".format(logp))
+
         # Keeping track of sample we're on
         # global i
         # i = i + 1
@@ -222,7 +253,7 @@ class DensErr(Dens2bBatt):
         x = np.copy(self.prm_init)
         x = [x]
         for n in range(nwalkers-1):
-            perturb_rho = np.random.normal(0, 5*sigma_perturb, len(densities))
+            perturb_rho = np.random.normal(0, 5*self.sigma_perturb, len(densities))
             adding = densities+perturb_rho
             x.append(adding)
 
@@ -242,6 +273,7 @@ class DensErr(Dens2bBatt):
             counts = np.linspace(1, len(self.prm_init), len(self.prm_init), dtype=int)
             figure = corner.corner(samples, show_titles=True, labels=counts, truths=self.actual_rhos)
             figure.savefig('{}_EMCEE.png'.format(self.corner_plot))
+            plt.close(figure)
 
     def run_HMC(self):
 
@@ -258,7 +290,7 @@ if __name__ == "__main__":
     # starting with 2D
     z = 8
     # one_d_size = 16
-    dir = "/Users/sabrinaberger/Library/Mobile Documents/com~apple~CloudDocs/CosmicDawn/building/21cmFASTBoxes_{}/PerturbedField_*".format(z)
+    dir = "/Users/sabrinaberger/Library/Mobile Documents/com~apple~CloudDocs/CosmicDawn/21cmFASTData/21cmFASTBoxes_{}/PerturbedField_*".format(z)
     hf = h5py.File(glob.glob(dir)[0], 'r')
     line_rho = hf["PerturbedField/density"][:, 0, 0]
     dens2Tb = Dens2bBatt(line_rho, 1, z, one_d=True)
@@ -279,7 +311,7 @@ if __name__ == "__main__":
 
     mu, sigma_T = 0, 1
     cov *= sigma_T
-    cov = cov**2 # squaring standard deviations to get to variance
+    cov_likelihood = cov**2 # squaring standard deviations to get to variance
     noise = np.random.normal(mu, sigma_T, one_d_size)
     one_Tb += noise
 
@@ -303,12 +335,12 @@ if __name__ == "__main__":
     if not emc:
         for eps in epsilons:
             i += 1
-            test1D = DensErr(z, one_rho, one_Tb, cov, sigma_D, sigma_T, epsilon=eps, nsamples=int(1e4), emc=False)
+            test1D = DensErr(z, one_rho, one_Tb, cov_likelihood, cov_prior, sigma_D, sigma_T, epsilon=eps, nsamples=int(1e4), emc=False)
             rej_rates.append(test1D.rejection_rate)
 
     if emc:
         eps = 0
-        test1D = DensErr(z, one_rho, one_Tb, cov, sigma_D, sigma_T, epsilon=eps, actual_rhos=actual_rho, nsamples=int(1e5), emc=True)
+        test1D = DensErr(z, one_rho, one_Tb, cov_likelihood, cov_prior, sigma_D, sigma_T, epsilon=eps, actual_rhos=actual_rho, nsamples=int(1e4), emc=True)
 
     # import matplotlib.pyplot as plt
     # plt.close()
