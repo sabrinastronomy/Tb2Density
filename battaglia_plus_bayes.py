@@ -17,7 +17,7 @@ class DensErr(Dens2bBatt):
     uses the Battaglia et al (2013) model in a Gaussian likelihood function.
     """
 
-    def __init__(self, z, guess_density_field, temp_brightness_field, cov_likelihood, cov_prior, sigma_prior, sigma_T, epsilon, actual_rhos, sigma_perturb=0.1, log_norm=False, one_d=True, delta_pos=1, delta_k=1, nsamples=1000, corner_plot="../STAT_IMAGE/z_8_pngs/testing_1D", plotsamples=True, emc=True):
+    def __init__(self, z, guess_density_field, temp_brightness_field, cov_likelihood, cov_prior, sigma_prior, sigma_T, epsilon, actual_rhos, sigma_perturb=0.1, log_norm=False, one_d=True, delta_pos=1, delta_k=1, nsamples=1000, corner_plot="../plots", plotsamples=False, emc=True):
         self.z = z # setting the
         self.Tarr = temp_brightness_field # temperature brightness field we're trying to convert to density field
         self.prm_init = guess_density_field # initial guess for density field
@@ -193,30 +193,32 @@ class DensErr(Dens2bBatt):
 
     def numeric_posterior(self, prm):
         # LOGGED
-        self.prm_curr = prm
-        if np.min(self.prm_curr) < -1:
+        #print("np.min(self.prm_curr) {}".format(np.min(self.prm_curr)))
+        if np.min(prm) < -1:
+            #print("returning log infinity")
             return -np.inf
 
         if self.one_d:
             self.currentBatt = Dens2bBatt(prm, 1, self.z, one_d=True)
             Tb = self.currentBatt.get_temp_brightness()
             if self.log_norm and self.emc:
+                #print("entering log normal prior")
                 #correlated prior
                 c = np.linalg.det(self.cov_prior)
                 # print("input prms {}".format(self.prm_curr))
-                log_norm_func = np.log(1 + self.prm_curr)
+                log_norm_func = np.log(1 + prm)
                 # print("log_norm_func {}".format(log_norm_func))
                 trans_prior = -(0.5) * log_norm_func.T
                 trans_prior_C = np.dot(trans_prior, np.linalg.inv(self.cov_prior))
                 trans_prior_C_prior = np.dot(trans_prior_C, log_norm_func)
                 # print("prior_rhos {}".format(trans_prior_C_prior))
-                prefactor_prior = 1 / (np.sqrt(2 * np.pi) * c)
+                prefactor_prior = np.log(1 / (np.sqrt(2 * np.pi) * c))
                 prior_rhos = trans_prior_C_prior
                 # print("prefactor_prior {}".format(prefactor_prior))
 
             else:
                 prior_rhos = -(0.5 / self.sigma_D ** 2) * np.sum((prm ** 2))
-                prefactor_prior = 1 / (np.sqrt(2 * np.pi) * self.sigma_D) ** len(prm)
+                prefactor_prior = np.log(1 / (np.sqrt(2 * np.pi) * self.sigma_D) ** len(prm))
 
             # uncorrelated likelihood
             trans_X = (-0.5) * (Tb - self.Tarr).T
@@ -224,7 +226,7 @@ class DensErr(Dens2bBatt):
             trans_X_C_X = np.dot(trans_X_C, (Tb - self.Tarr))
 
             c = np.linalg.det(self.cov_likelihood)
-            prefactor_likelihood = 1 / (np.sqrt(2 * np.pi) * c) ** len(self.Tarr)
+            prefactor_likelihood = np.log(1 / (np.sqrt(2 * np.pi) * c) ** len(self.Tarr))
 
             # prefactor = (prefactor_likelihood)
             # logp = prefactor + (trans_X_C_X)
@@ -236,32 +238,37 @@ class DensErr(Dens2bBatt):
             # print("logp {}".format(logp))
 
         # Keeping track of sample we're on
-        # global i
-        # i = i + 1
-        # if i % 1000:
-        #     # print("{} samples".format(i))
-        # print("num_post {}".format(num_post)) # NOT normalized posterior
+        #global i
+        #i = i + 1
+        #if i % 1000:
+        #    print("{} samples".format(i))
+        #print("num_post {}".format(num_post)) # NOT normalized posterior
         if self.emc:
+            # print("logp {}".format(logp))
             return logp
         else:
             return logp, self.get_gradients()
 
     def run_emcee(self):
-        ndim, nwalkers = len(self.prm_init), 48
+        ndim, nwalkers = len(self.prm_init), 3*len(self.prm_init)
         # p0 = np.random.randn(nwalkers, ndim)
         densities = np.copy(self.prm_init)
         x = np.copy(self.prm_init)
         x = [x]
         for n in range(nwalkers-1):
-            perturb_rho = np.random.normal(0, 5*self.sigma_perturb, len(densities))
-            adding = densities+perturb_rho
+            perturb_rho = np.random.normal(0, self.sigma_perturb, len(densities))
+            adding = densities + perturb_rho
+            print("peturbed densities {}".format(adding))
             x.append(adding)
+        print("RUNNING EMCEE")
+        import time
+        print("STARTED AT {}".format(time.time()))
 
         sampler = emcee.EnsembleSampler(nwalkers, ndim, self.numeric_posterior)
         sampler.run_mcmc(x, self.nsamples)
 
         samples = sampler.get_chain(flat=True)
-        np.save('{}_SAMPLES'.format(self.corner_plot), samples)
+        np.save('{}_{}_SAMPLES'.format(self.corner_plot, self.z), samples)
         i = 0
         modes = []
         for i, density in enumerate(np.transpose(samples)):
