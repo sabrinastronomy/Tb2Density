@@ -46,5 +46,5 @@ import corner
 test = samples[-1000:, -20:]
 print(test.shape)
 print(actual_densities[-5:])
-figure = corner.corner(test, show_titles=True, labels=xvals, truths=actual_densities[-5:], range=[(-1,1), (-1,1), (-1,1), (-1,1), (-1,1)])
+figure = corner.corner(test, show_titles=True, labels=xvals, truths=actual_densities[-5:])
 figure.savefig("/Users/sabrinaberger/new_data/UNCORR_corner_last_20.pdf")
