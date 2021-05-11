@@ -1,13 +1,13 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
-samples = np.load("/Users/sabrinaberger/new_data/plots_num_samples_10000_eps_0_dvals_128_sigmaT_1_z_8_UNCORR_DENSITIES_SAMPLES.npy")
+samples = np.load("/Users/sabrinab/plots_num_samples_10000_eps_0_dvals_128_sigmaT_1_z_8_UNCORR_DENSITIES_SAMPLES.npy")
 
 z = 8
-actual_densities = np.load("/Users/sabrinaberger/new_data/actual_densities.npy")
+actual_densities = np.load("/Users/sabrinab/actual_densities.npy")
 size = len(actual_densities)
 
-temp_bright = np.load("/Users/sabrinaberger/new_data/temp_bright.npy")
+temp_bright = np.load("/Users/sabrinab/new_data/temp_bright.npy")
 neutral = temp_bright > 0
 print(neutral)
 fig = plt.figure()
@@ -38,7 +38,7 @@ ybottom, ytop = ax.get_ylim()
 ax.set_aspect(abs((xright-xleft)/(ybottom-ytop))*ratio)
 ####
 
-fig.savefig("/Users/sabrinaberger/new_data/UNCORR_10000_samples_overview.pdf")
+fig.savefig("/Users/sabrinab/UNCORR_10000_samples_overview.pdf")
 plt.show()
 plt.clf()
 
@@ -47,4 +47,4 @@ test = samples[-1000:, -20:]
 print(test.shape)
 print(actual_densities[-5:])
 figure = corner.corner(test, show_titles=True, labels=xvals, truths=actual_densities[-5:])
-figure.savefig("/Users/sabrinaberger/new_data/UNCORR_corner_last_20.pdf")
+figure.savefig("/Users/sabrinab/UNCORR_corner_last_20.pdf")
