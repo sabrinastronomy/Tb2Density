@@ -16,7 +16,8 @@ mu, sigma_T = 0, 1
 cov_likelihood *= sigma_T
 cov_likelihood = cov_likelihood ** 2
 
-# cov_prior = datasets.make_spd_matrix(8, 8)
+
+# TO DO: make Gaussian that peaks at 1
 cov_prior = np.copy(cov_prior_uncorr) * 0.5
 for i in range(np.shape(cov_prior)[0]):
     if i != (np.shape(cov_prior)[0] - 1):

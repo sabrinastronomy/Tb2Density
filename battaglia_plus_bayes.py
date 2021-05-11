@@ -17,7 +17,7 @@ class DensErr(Dens2bBatt):
     uses the Battaglia et al (2013) model in a Gaussian likelihood function.
     """
 
-    def __init__(self, z, guess_density_field, temp_brightness_field, cov_likelihood, cov_prior, sigma_prior, sigma_T, epsilon, actual_rhos, sigma_perturb=0.1, log_norm=False, one_d=True, delta_pos=1, delta_k=1, nsamples=1000, corner_plot="../STAT_IMAGE/z_8_pngs/testing_1D", plotsamples=True, emc=True):
+    def __init__(self, z, guess_density_field, temp_brightness_field, cov_likelihood, cov_prior, sigma_prior, sigma_T, epsilon, actual_rhos, sigma_perturb=0.1, log_norm=False, one_d=True, delta_pos=1, delta_k=1, nsamples=1000, corner_plot="../plots", plotsamples=True, emc=True):
         self.z = z # setting the
         self.Tarr = temp_brightness_field # temperature brightness field we're trying to convert to density field
         self.prm_init = guess_density_field # initial guess for density field
@@ -247,7 +247,7 @@ class DensErr(Dens2bBatt):
             return logp, self.get_gradients()
 
     def run_emcee(self):
-        ndim, nwalkers = len(self.prm_init), 48
+        ndim, nwalkers = len(self.prm_init), 3*len(self.prm_init)
         # p0 = np.random.randn(nwalkers, ndim)
         densities = np.copy(self.prm_init)
         x = np.copy(self.prm_init)
@@ -256,6 +256,9 @@ class DensErr(Dens2bBatt):
             perturb_rho = np.random.normal(0, 5*self.sigma_perturb, len(densities))
             adding = densities+perturb_rho
             x.append(adding)
+        print("RUNNING EMCEE")
+        import time
+        print("STARTED AT {}".format(time.time()))
 
         sampler = emcee.EnsembleSampler(nwalkers, ndim, self.numeric_posterior)
         sampler.run_mcmc(x, self.nsamples)
