@@ -1,7 +1,8 @@
 import matplotlib.pyplot as plt
 import numpy as np
-direc = "/Users/sabrinab"
-
+import sys
+direc = sys.argv[1]
+print(direc)
 redshifts = [10, 8, 6, 4]
 for redshift in redshifts:
     corr_samples = np.load("{}/plots_num_samples_10000_eps_0_dvals_128_sigmaT_1_z_{}_CORRELATED_DENSITIES_{}_SAMPLES.npy".format(direc, redshift, redshift))
@@ -9,14 +10,15 @@ for redshift in redshifts:
     for samples, type in zip([corr_samples, uncorr_samples], ["CORR", "UNCORR"]):
         actual_densities = np.load("{}/actual_densities_{}.npy".format(direc, redshift))
         size = len(actual_densities)
-
-        temp_bright = np.load("{}/new_data/temp_bright_{}.npy".format(direc, redshift))
+        print(actual_densities[-5:])
+        truths_data = actual_densities[-20:]
+        temp_bright = np.load("{}/temp_bright_{}.npy".format(direc, redshift))
         neutral = temp_bright > 0
         print(neutral)
         fig = plt.figure()
         ax = fig.add_subplot(111)
-        for samp in samples[:100]:
-            ax.plot(samp, alpha=1, c = 'blue')
+        for samp in samples[:1000]:
+            ax.plot(samp, alpha=0.1, c = 'blue')
 
         xvals = np.linspace(0, size-1, size)
         ### PLOT actual BUBBLES
@@ -41,10 +43,11 @@ for redshift in redshifts:
         ax.set_aspect(abs((xright-xleft)/(ybottom-ytop))*ratio)
         ####
 
-        fig.savefig("{}/{}_10000_samples_overview.pdf".format(direc, type))
+        fig.savefig("{}/{}_{}_10000_samples_overview.pdf".format(direc, redshift, type))
         plt.clf()
 
         import corner
         test = samples[-1000:, -20:]
-        figure = corner.corner(test, show_titles=True, labels=xvals, truths=actual_densities[-5:])
-        figure.savefig("{}/UNCORR_corner_last_{}.pdf".format(direc, redshift))
+        test_length = len(test)
+        figure = corner.corner(test, show_titles=True, labels=xvals, truths=truths_data)
+        figure.savefig("{}/{}_corner_last_{}.pdf".format(direc, type, redshift))
