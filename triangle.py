@@ -201,6 +201,7 @@ def plot_triangle(flatchain, fig=1, axes=None, elements=None,
         elements = range(0, flatchain.shape[1])
     else:
         Np = len(elements)
+        print(Np)
 
     if type(bins) not in [list, tuple, np.ndarray]:
         bins = [bins] * Np
@@ -318,10 +319,26 @@ def plot_triangle(flatchain, fig=1, axes=None, elements=None,
 
 
 if __name__ == '__main__':
-    flatchain1 = np.random.normal(scale=0.5, size=40000).reshape(10000, 4)
-    flatchain2 = np.random.normal(scale=1, size=40000).reshape(10000, 4)
+    redshifts = [10, 8, 6, 4]
+    direc = "/Users/sabrinaberger/new_data"
+    plot_direc = "/Users/sabrinaberger/RESULTS_PLOTS"
+    for redshift in redshifts:
+        corr_samples = np.load("{}/plots_num_samples_10000_eps_0_dvals_128_sigmaT_1_z_{}_CORRELATED_DENSITIES_{}_SAMPLES.npy".format(direc, redshift, redshift))
+        uncorr_samples = np.load("{}/plots_num_samples_10000_eps_0_dvals_128_sigmaT_1_z_{}_UNCORR_DENSITIES_{}_SAMPLES.npy".format(direc, redshift, redshift))
 
-    fig, axes = plot_triangle(flatchain1, contours=True, color='k', colors='k',
-        smooth=1.5)
-    fig, axes = plot_triangle(flatchain2, contours=True, color='b', colors='b',
-        smooth=1.5, fig=fig, axes=axes)
+        corr_samples = corr_samples[-1000:]
+        uncorr_samples = uncorr_samples[-1000:]
+        size = 5
+        xvals = np.linspace(0, size-1, size, dtype=int)
+        print(xvals)
+
+        fig_corr, axes_corr = plot_triangle(corr_samples, contours=True, color='k', colors='k', elements=xvals, labels=xvals)
+        fig_uncorr, axes_uncorr = plot_triangle(uncorr_samples, contours=True, color='b', colors='b', fig=fig_corr, axes=axes_corr, elements=xvals, labels=xvals)
+        fig_corr.savefig("{}/{}_corr_vs_uncorr_corner_first5.pdf".format(plot_direc, redshift))
+    # flatchain1 = np.random.normal(scale=0.5, size=40000).reshape(10000, 4)
+    # flatchain2 = np.random.normal(scale=1, size=40000).reshape(10000, 4)
+    #
+    # fig, axes = plot_triangle(flatchain1, contours=True, color='k', colors='k',
+    #     smooth=1.5)
+    # fig, axes = plot_triangle(flatchain2, contours=True, color='b', colors='b',
+    #     smooth=1.5, fig=fig, axes=axes)
