@@ -2,17 +2,18 @@
 model_direc = "../MODELS/"
 save_direc = '../STAT_IMAGE/'
 watershed_direc = '/Users/sabrinaberger/CosmicDawn/watershed/analyze'
+
 ####
 
+import os
+import imageio
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 from keras.models import load_model
-import os
-import imageio
 import sys
-sys.path.append('/Users/sabrinaberger/CosmicDawn/building/new_pix2pix/src/utils/')
 import data_utils
+sys.path.append('/Users/sabrinaberger/CosmicDawn/OlD Gan:cGAN/new_pix2pix/src/utils/')
 
 
 class Model:

@@ -1,13 +1,13 @@
 import numpy as np
-from pyhmc import hmc
 from battaglia_full import Dens2bBatt
-import corner
+# import corner
 import glob
 import h5py
 from scipy import interpolate
 import matplotlib.pyplot as plt
-import emcee
 import statistics
+import emcee
+# import pyhmc
 
 i = 0
 
@@ -17,11 +17,10 @@ class DensErr(Dens2bBatt):
     uses the Battaglia et al (2013) model in a Gaussian likelihood function.
     """
 
-    def __init__(self, z, guess_density_field, temp_brightness_field, cov_likelihood, cov_prior, sigma_prior, sigma_T, epsilon, actual_rhos, sigma_perturb=0.1, log_norm=False, one_d=True, delta_pos=1, delta_k=1, nsamples=1000, corner_plot="../plots", plotsamples=False, emc=True):
+    def __init__(self, z, guess_density_field, obs_temp_brightness_field, cov_likelihood, cov_prior, sigma_prior, sigma_T, epsilon, actual_rhos, sigma_perturb=1, log_norm=True, one_d=True, delta_pos=1, delta_k=1, nsamples=1000, corner_plot="../STAT_DATA/plots", plotsamples=False, emc=False, pyMC3=False, pyHMC=False, no_prior_uncorr=True):
         self.z = z # setting the
-        self.Tarr = temp_brightness_field # temperature brightness field we're trying to convert to density field
+        self.Tarr = obs_temp_brightness_field # temperature brightness field we're trying to convert to density field
         self.prm_init = guess_density_field # initial guess for density field
-        self.prm_curr = ""
         self.cov_likelihood = cov_likelihood
         self.delta_k = delta_k
         self.sigma_likelihood = np.sqrt(cov_likelihood[0][0])
@@ -34,56 +33,68 @@ class DensErr(Dens2bBatt):
         self.plotsamples = plotsamples
         self.sigma_perturb = sigma_perturb
         self.log_norm = log_norm
+        self.pyHMC = pyHMC
+        self.pyMC3 = pyMC3
+        self.no_prior_uncorr = no_prior_uncorr
         super().__init__(self.prm_init, self.delta_pos, self.z, one_d, False) # this is so we can access some parameters in Dens2bBatt that we need here
 
         if log_norm:
             self.cov_prior = cov_prior
             # checks if cov matrix is diagonal
-            if np.count_nonzero(self.cov_prior - np.diag(np.diagonal(self.cov_prior))) != 0:
-
+            if np.count_nonzero(self.cov_prior - np.diag(np.diag(self.cov_prior))) != 0:
                 self.corner_plot = corner_plot + "_num_samples_{}_eps_{}_dvals_{}_sigmaT_{}_z_{}_CORRELATED_DENSITIES".format(self.nsamples,
                                                                                                      self.epsilon,
                                                                                                      len(self.prm_init),
                                                                                                      sigma_T, self.z)
-            else:
-                self.corner_plot = corner_plot + "_num_samples_{}_eps_{}_dvals_{}_sigmaT_{}_z_{}_UNCORR_DENSITIES".format(
-                    self.nsamples,
-                    self.epsilon,
-                    len(self.prm_init),
-                    sigma_T, self.z)
-
         else:
-            self.corner_plot = corner_plot + "_num_samples_{}_eps_{}_dvals_{}_sigmaT_{}_z_{}".format(self.nsamples, self.epsilon, len(self.prm_init), sigma_T, self.z)
+            self.corner_plot = corner_plot + "_num_samples_{}_eps_{}_dvals_{}_sigmaT_{}_z_{}_UNCORR_DENSITIES".format(
+                self.nsamples,
+                self.epsilon,
+                len(self.prm_init),
+                sigma_T, self.z)
+
+        # else:
+        #     self.corner_plot = corner_plot + "_num_samples_{}_eps_{}_dvals_{}_sigmaT_{}_z_{}".format(self.nsamples, self.epsilon, len(self.prm_init), sigma_T, self.z)
         # BE SURE TO DIFFERENTIATE BETWEEN THIS INSTANCE & INSTANCE OF CURRENT DENSITY BEING SAMPLED!
         self.emc = emc
         self.actual_rhos = actual_rhos
         if self.emc:
             self.run_emcee()
-        else:
-            self.run_HMC()
+        elif self.pyHMC:
+            from pyhmc import hmc
+            self.run_pyHMC()
 
-    def get_grad_prior(self):
+    def get_grad_prior(self, prm):
         # TODO: check prior grad
-        self.prior_grad = -1/self.sigma_D**2 * self.prm_curr
-        return self.prior_grad
+        prior_grad = -1/self.sigma_D**2 * prm
+        return prior_grad
 
-    def get_gradients(self):
+    def get_gradients(self, prm):
         """
         Returns
         -----------
         the gradients of the log posterior with respect to the current density field being sampled.
         """
-        final_grad = (self.grad_prefactor() * self.grad_sum()) + self.get_grad_prior()
+        currentBatt = Dens2bBatt(prm, 1, self.z, one_d=True)
+        # avoiding race conditions UGH!
+        Tb = currentBatt.get_temp_brightness()
+        X_HI = currentBatt.get_x_hi()
+        z_re = currentBatt.get_z_re()
+        set_z = currentBatt.set_z
+        avg_z = currentBatt.avg_z
+
+        final_grad = (self.grad_prefactor() * self.grad_sum(prm, X_HI, Tb, z_re, set_z, avg_z)) + self.get_grad_prior(prm)
+
         # print("final_grad {} for TMOD: {}, TMEAS: {}, RHO: {}, z_re {}, z {}, avg z {}, delta_z_loc {}".format(final_grad, self.Tarr, self.currentBatt.temp_brightness, self.currentBatt.density, self.currentBatt.z_re, self.currentBatt.set_z, self.currentBatt.avg_z, 0.1))
         return final_grad
 
-    def grad_sum(self):
+    def grad_sum(self, prm, X_HI, Tb, z_re, set_z, avg_z):
         """
         Returns
         -----------
         returns final sum inside gradients
         """
-        return self.currentBatt.X_HI * (self.Tarr - self.currentBatt.temp_brightness) + self.long_sum()
+        return X_HI * (self.Tarr - Tb) + self.long_sum(prm, z_re, set_z, Tb, avg_z, dz=0.1)
 
     def grad_prefactor(self):
         """
@@ -136,7 +147,7 @@ class DensErr(Dens2bBatt):
 
 
 
-    def long_sum(self, dz=0.1):
+    def long_sum(self, prm, z_re, set_z, Tb, avg_z, dz=0.1):
         """
         Denominator in trig function.
         Parameters
@@ -149,13 +160,13 @@ class DensErr(Dens2bBatt):
         gradient long sum
         gradient long sum
         """
-        trig_input = (self.currentBatt.z_re - self.currentBatt.set_z)/dz
+        trig_input = (z_re - set_z)/dz
         trig_term = np.real((-2 * dz)**(-1) * (1/np.cosh(trig_input))**2)
-        inside_sum_1 = self.Tarr - self.currentBatt.get_temp_brightness()
-        inside_sum_2 = (1 + self.prm_curr) * trig_term * (1 + self.currentBatt.avg_z)
+        inside_sum_1 = self.Tarr - Tb
+        inside_sum_2 = (1 + prm) * trig_term * (1 + avg_z)
         bias_function = self.bias_interp() # getting interpolated bias function
 
-        densities = self.prm_curr # current densities being sampled
+        densities = prm # current densities being sampled
         flattened = densities.flatten() # flattening density array
         if self.one_d:
             second_total_sum = np.empty(len(densities))
@@ -176,7 +187,6 @@ class DensErr(Dens2bBatt):
                     r_mag = np.sqrt((coord_a[0]-coord_i[0])**2 + (coord_a[1]-coord_i[1])**2)
                     bias_factors.append(bias_function(r_mag, num_rows)) # TODO: add units
                 second_total_sum[coord_i[0]][coord_i[1]] = np.sum(inside_sum_1*inside_sum_2*bias_factors)
-        # print("second_total_sum {}".format(second_total_sum))
         return second_total_sum
 
     @staticmethod
@@ -193,99 +203,103 @@ class DensErr(Dens2bBatt):
 
     def numeric_posterior(self, prm):
         # LOGGED
-        #print("np.min(self.prm_curr) {}".format(np.min(self.prm_curr)))
         if np.min(prm) < -1:
-            #print("returning log infinity")
             return -np.inf
 
         if self.one_d:
-            self.currentBatt = Dens2bBatt(prm, 1, self.z, one_d=True)
-            Tb = self.currentBatt.get_temp_brightness()
-            if self.log_norm and self.emc:
-                #print("entering log normal prior")
-                #correlated prior
+            currentBatt = Dens2bBatt(prm, 1, self.z, one_d=True)
+            Tb = currentBatt.get_temp_brightness()
+
+            if self.log_norm and (self.emc or self.pyMC3):
+                # correlated prior
                 c = np.linalg.det(self.cov_prior)
-                # print("input prms {}".format(self.prm_curr))
                 log_norm_func = np.log(1 + prm)
-                # print("log_norm_func {}".format(log_norm_func))
                 trans_prior = -(0.5) * log_norm_func.T
                 trans_prior_C = np.dot(trans_prior, np.linalg.inv(self.cov_prior))
                 trans_prior_C_prior = np.dot(trans_prior_C, log_norm_func)
-                # print("prior_rhos {}".format(trans_prior_C_prior))
                 prefactor_prior = np.log(1 / (np.sqrt(2 * np.pi) * c))
                 prior_rhos = trans_prior_C_prior
-                # print("prefactor_prior {}".format(prefactor_prior))
 
             else:
-                prior_rhos = -(0.5 / self.sigma_D ** 2) * np.sum((prm ** 2))
-                prefactor_prior = np.log(1 / (np.sqrt(2 * np.pi) * self.sigma_D) ** len(prm))
+                if self.no_prior_uncorr:
+                    prior_rhos = 1
+                    prefactor_prior = 1
+                else:
+                    prior_rhos = -(0.5 / self.sigma_D ** 2) * np.sum((prm ** 2))
+                    prefactor_prior = np.log(1 / (np.sqrt(2 * np.pi) * self.sigma_D) ** len(prm))
 
-            # uncorrelated likelihood
+            #uncorrelated likelihood
             trans_X = (-0.5) * (Tb - self.Tarr).T
             trans_X_C = np.dot(trans_X, np.linalg.inv(self.cov_likelihood))
             trans_X_C_X = np.dot(trans_X_C, (Tb - self.Tarr))
 
             c = np.linalg.det(self.cov_likelihood)
             prefactor_likelihood = np.log(1 / (np.sqrt(2 * np.pi) * c) ** len(self.Tarr))
-
-            # prefactor = (prefactor_likelihood)
-            # logp = prefactor + (trans_X_C_X)
-
             prefactor = (prefactor_likelihood + prefactor_prior)
-            # print("prefactor {}".format(prefactor))
-
             logp = prefactor + (prior_rhos + trans_X_C_X)
-            # print("logp {}".format(logp))
 
         # Keeping track of sample we're on
-        #global i
-        #i = i + 1
-        #if i % 1000:
+        # global i
+        # i = i + 1
+        # if i % 1000:
         #    print("{} samples".format(i))
-        #print("num_post {}".format(num_post)) # NOT normalized posterior
+
         if self.emc:
-            # print("logp {}".format(logp))
             return logp
-        else:
+        elif self.pyHMC:
             return logp, self.get_gradients()
+        elif self.pyMC3:
+            return logp
+
 
     def run_emcee(self):
-        ndim, nwalkers = len(self.prm_init), 3*len(self.prm_init)
-        # p0 = np.random.randn(nwalkers, ndim)
+
+        ndim, nwalkers = len(self.prm_init), 2*len(self.prm_init)
         densities = np.copy(self.prm_init)
-        x = np.copy(self.prm_init)
-        x = [x]
-        for n in range(nwalkers-1):
-            perturb_rho = np.random.normal(0, self.sigma_perturb, len(densities))
-            adding = densities + perturb_rho
-            print("peturbed densities {}".format(adding))
-            x.append(adding)
+        x = []
+        for n in range(nwalkers):
+            # You could add a random seed density field
+            perturb_rho = np.random.normal(0, 0.5, len(densities))
+            # perturb_rho = np.random.normal(1, 2*self.sigma_perturb, len(densities))
+            # adding = densities + perturb_rho
+            # adding = 1 + perturb_rho
+            for i, a in enumerate(perturb_rho):
+                if a < -1:
+                    perturb_rho[i] = -0.9
+            print("peturbed densities {}".format(perturb_rho))
+            x.append(perturb_rho)
+        x = np.asarray(x)
+        flattened_walkers = np.sort(x.flatten())
+        # plt.plot(flattened_walkers)
+        # plt.show()
+        print("WALKERS: {}".format(flattened_walkers))
         print("RUNNING EMCEE")
-        import time
-        print("STARTED AT {}".format(time.time()))
+        # plt.plot(flattened_walkers, ls=None)
+        # plt.show()
+
+        from datetime import datetime
+        now = datetime.now()
+        print("STARTED AT {}".format(now))
 
         sampler = emcee.EnsembleSampler(nwalkers, ndim, self.numeric_posterior)
         sampler.run_mcmc(x, self.nsamples)
-
         samples = sampler.get_chain(flat=True)
+        print("Final Samples: {}".format(samples))
         np.save('{}_{}_SAMPLES'.format(self.corner_plot, self.z), samples)
-        i = 0
         modes = []
         for i, density in enumerate(np.transpose(samples)):
             modes.append(statistics.mode(density))
-
-        print("modes {}".format(modes))
-
         if self.plotsamples:
             counts = np.linspace(1, len(self.prm_init), len(self.prm_init), dtype=int)
             figure = corner.corner(samples, show_titles=True, labels=counts, truths=self.actual_rhos)
             figure.savefig('{}_EMCEE.png'.format(self.corner_plot))
             plt.close(figure)
+        now = datetime.now()
+        print("FINISHED AT {}".format(now))
 
-    def run_HMC(self):
 
+    def run_pyHMC(self):
         samples = hmc(self.numeric_posterior, x0=self.prm_init, n_samples=self.nsamples, epsilon=self.epsilon, return_diagnostics=True, return_logp=True, n_burn=1e3)
-        print(samples)
         self.rejection_rate = samples[2]["rej"]
         if self.plotsamples:
             counts = np.linspace(1, len(self.prm_init), len(self.prm_init), dtype=int)
@@ -295,11 +309,14 @@ class DensErr(Dens2bBatt):
 
 if __name__ == "__main__":
     # starting with 2D
-    z = 8
+    z_get = 8 # it doesn't matter which z we pull the density field from
     # one_d_size = 16
-    dir = "/Users/sabrinaberger/Library/Mobile Documents/com~apple~CloudDocs/CosmicDawn/21cmFASTData/21cmFASTBoxes_{}/PerturbedField_*".format(z)
+    dir = "/Users/sabrinaberger/Library/Mobile Documents/com~apple~CloudDocs/CosmicDawn/T2D2 Model/21cmFASTData/21cmFASTBoxes_{}/PerturbedField_*".format(z_get)
     hf = h5py.File(glob.glob(dir)[0], 'r')
+    z = 4
     line_rho = hf["PerturbedField/density"][:, 0, 0]
+    np.save("/Users/sabrinaberger/Library/Mobile Documents/com~apple~CloudDocs/CosmicDawn/T2D2 Model/STAT_DATA/actual_densities.npy", line_rho)
+
     dens2Tb = Dens2bBatt(line_rho, 1, z, one_d=True)
     line_Tb = dens2Tb.temp_brightness
     # print("TB {}".format(Tb))
@@ -307,14 +324,19 @@ if __name__ == "__main__":
 
     one_Tb = actual_Tb = line_Tb[41:57]
     one_rho = actual_rho = line_rho[41:57]
-    one_d_size = len(one_Tb)
+    # one_d_size = len(one_Tb)
+    one_d_size = 16
     # Adding noise to temperature brightness
     ones = np.ones(one_d_size)
-    cov = np.diag(ones)
+    # cov_prior = np.load("/Users/sabrinaberger/new_data/cov_prior.npy")
+    # cov_prior = cov_prior[:16, :16]
 
+    # print("correlated ? {}".format((np.count_nonzero(cov_prior - np.diag(np.diagonal(cov_prior))) != 0)))
+    print("cov_prior {}".format(np.shape(cov_prior)))
+    # cov = np.diag(ones)
 
-    print("rho {}".format(one_rho))
-    print("TB {}".format(one_Tb))
+    # print("rho {}".format(one_rho))
+    # print("TB {}".format(one_Tb))
 
     mu, sigma_T = 0, 1
     cov *= sigma_T
@@ -342,7 +364,7 @@ if __name__ == "__main__":
     if not emc:
         for eps in epsilons:
             i += 1
-            test1D = DensErr(z, one_rho, one_Tb, cov_likelihood, cov_prior, sigma_D, sigma_T, epsilon=eps, nsamples=int(1e4), emc=False)
+            test1D = DensErr(z, one_rho, one_Tb, cov_likelihood, cov_prior, sigma_D, sigma_T, epsilon=eps, nsamples=int(1e3), emc=False)
             rej_rates.append(test1D.rejection_rate)
 
     if emc:

@@ -16,6 +16,7 @@ def gradients(prm, cov, Tarr):
 
 def numeric_posterior(prm, cov, Tarr, PRIOR_sigma):
     # LOGGED
+
     alpha = prm[0]
     rho_vec = np.vstack(np.asarray(prm[1:len(prm)]))
     sigma_a = PRIOR_sigma[0]
