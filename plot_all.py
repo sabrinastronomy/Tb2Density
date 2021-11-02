@@ -9,8 +9,8 @@ from battaglia_full import Dens2bBatt
 
 # Applying the default theme
 sns.set_theme()
-a = np.load("actual_densities_15.npy")
-print(a[0])
+
+
 def oned_power_spectrum(data, delta, nbins):
     size = len(data)
     input = data * delta # scaling amplitude, Mpc
@@ -141,6 +141,7 @@ def plot_overview(samples, actual_densities, temps, type, direc, redshift, num_s
     ax.set_title("z = {}".format(redshift))
     ax.set_xlabel("Pixel Number", fontsize=5)
     ax.set_ylabel(r"Fractional overdensity $\delta$", fontsize=5)
+    # ax.set_ylim((0, 10))
 
     i = 0
     stopping = (len(actual_densities) - 1)
@@ -196,8 +197,8 @@ def get_1sigma(samples):
 
 
 direc = "/Users/sabrinaberger/Library/Mobile Documents/com~apple~CloudDocs/CosmicDawn/T2D2 Model/STAT_DATA"
-plot_direc = "/Users/sabrinaberger/CORRECTED_RESULTS"
-redshifts = [15]
+plot_direc = "/Users/sabrinaberger/debug_15"
+redshifts = [12]
 # redshifts = [10]
 err_corr = []
 err_uncorr = []
@@ -228,10 +229,14 @@ num_samples = 1000
 
 if True:
     for redshift in redshifts:
-        actual_densities = np.load("/Users/sabrinaberger/new_data_october/actual_densities_{}.npy".format(redshift))
-        temp_bright = np.load("/Users/sabrinaberger/new_data_october/temp_bright_{}.npy".format(redshift))
-        corr_samples = np.load("/Users/sabrinaberger/new_data_october/_num_samples_1000_eps_0_dvals_128_sigmaT_1_z_{}_CORRELATED_DENSITIES_{}_SAMPLES.npy".format(redshift, redshift))
-        #uncorr_samples = np.load("/Users/sabrinaberger/new_data_october/_num_samples_1000_eps_0_dvals_128_sigmaT_1_z_15_UNCORR_DENSITIES_15_SAMPLES.npy".format(redshift, redshift))
+        # actual_densities = np.load("/Users/sabrinaberger/new_data_october/actual_densities_{}.npy".format(redshift))
+        # temp_bright = np.load("/Users/sabrinaberger/new_data_october/temp_bright_{}.npy".format(redshift))
+        # corr_samples = np.load("/Users/sabrinaberger/new_data_october/_num_samples_1000_eps_0_dvals_128_sigmaT_1_z_{}_CORRELATED_DENSITIES_{}_SAMPLES.npy".format(redshift, redshift))
+        # #uncorr_samples = np.load("/Users/sabrinaberger/new_data_october/_num_samples_1000_eps_0_dvals_128_sigmaT_1_z_15_UNCORR_DENSITIES_15_SAMPLES.npy".format(redshift, redshift))
+        actual_densities = np.load("{}_corr_densities_latest_run.npy".format(redshift))
+        temp_bright = np.load("{}_corr_densities_latest_run.npy".format(redshift))
+        uncorr_samples = np.load(direc + "/plots_num_samples_1000_eps_0_dvals_16_sigmaT_1_sigmaD_1_z_12_UNCORR_DENSITIES_12_SAMPLES.npy")
+
         neutral, ionized = get_neutral_ionized_boolean(temp_bright)
 
         if power:
@@ -282,8 +287,8 @@ if True:
             # typ = "uncorr"
             # plot_overview(samps, actual_densities, temp_bright, typ, plot_direc, redshift, num_samples=1000)
 
-            samps = corr_samples
-            typ = "corr"
+            samps = uncorr_samples
+            typ = "uncorr"
             plot_overview(samps, actual_densities, temp_bright, typ, plot_direc, redshift, num_samples=100)
             # size = len(actual_densities)
             # truths_data = actual_densities[-20:]

@@ -133,8 +133,14 @@ class Dens2bBatt:
         return
 
 
-#
+
 # if __name__ == "__main__":
+    # rho = np.asarray([1.92688, -0.41562])
+    # z = 15
+    # dens2Tb = Dens2bBatt(rho, 1, z)
+    # Tb = dens2Tb.temp_brightness
+    # print(Tb)
+
 #     for z in [14]:
 #         dir = "/Users/sabrinaberger/Library/Mobile Documents/com~apple~CloudDocs/CosmicDawn/building/21cmFASTBoxes_{}/PerturbedField_*".format(z)
 #         hf = h5py.File(glob.glob(dir)[0], 'r')
