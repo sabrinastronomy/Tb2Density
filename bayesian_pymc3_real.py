@@ -3,45 +3,72 @@ import theano
 import pymc3 as pm
 import numpy as np
 import arviz as az
+from battaglia_full import Dens2bBatt
+from battaglia_plus_bayes import DensErr
 import matplotlib.pyplot as plt
 import corner
-from battaglia_plus_bayes import DensErr
-from battaglia_full import Dens2bBatt
-import h5py
-import glob
 
 az.style.use('arviz-darkgrid')
 
-z = 12
-one_d_size = 128
+z = 9
+one_d_size = ndim = 64
 mu, sigma_T, sigma_D = 0, 1, 1
 ones = np.ones(one_d_size)
 cov = cov_prior = np.diag(ones)
 cov *= sigma_T
 cov_likelihood = cov ** 2
 
-dir = "/Users/sabrinaberger/Library/Mobile Documents/com~apple~CloudDocs/CosmicDawn/T2D2 Model/21cmFASTData/21cmFASTBoxes_{}/PerturbedField_*".format(z)
-hf = h5py.File(glob.glob(dir)[0], 'r')
-line_rho = hf["PerturbedField/density"][:, 0, 0]
-dens2Tb = Dens2bBatt(line_rho, 1, z, one_d=True)
-line_Tb = one_Tb = dens2Tb.temp_brightness
-one_rho = actual_rho = line_rho[:one_d_size]
-one_Tb = actual_Tb = line_Tb[:one_d_size]
+cov_prior = np.copy(cov)
+
+for i in range(np.shape(cov_prior)[0]):
+    if i != (np.shape(cov_prior)[0] - 1):
+        cov_prior[i][i + 1] = 0.05
+        if i < (np.shape(cov_prior)[0] - 2):
+            cov_prior[i][i + 2] = 0.05
+    if i != 0:
+        cov_prior[i][i - 1] = 0.15
+        if i > 1:
+            cov_prior[i][i - 2] = 0.05
+
+# correlated densities
+x = np.random.randn(one_d_size)
+L = np.linalg.cholesky(cov_prior)
+correlated_vars = np.dot(L, x)
+# one_rho = log_norm_correlated_density = np.exp(correlated_vars) - 1
+# dens2Tb = Dens2bBatt(one_rho, 1, z, one_d=True)
+# one_Tb = dens2Tb.temp_brightness
+
+
+
+# LOAD IN DENSITIES FROM 21cmFAST
+# dir = "/Users/sabrinaberger/Library/Mobile Documents/com~apple~CloudDocs/CosmicDawn/T2D2 Model/21cmFASTData/21cmFASTBoxes_{}/PerturbedField_*".format(z)
+# hf = h5py.File(glob.glob(dir)[0], 'r')
+# line_rho = hf["PerturbedField/density"][:, 0, 0]
+# dens2Tb = Dens2bBatt(line_rho, 1, z, one_d=True)
+# line_Tb = one_Tb = dens2Tb.temp_brightness
+# one_rho = actual_rho = line_rho[:one_d_size]
+# one_Tb = actual_Tb = line_Tb[:one_d_size]
+
+one_rho = np.load("/Users/sabrinaberger/Library/Mobile Documents/com~apple~CloudDocs/CosmicDawn/T2D2 Model/STAT_DATA/CORR_DATA/one_rho_z{}_size{}.npy".format(z, one_d_size))
+one_Tb = np.load("/Users/sabrinaberger/Library/Mobile Documents/com~apple~CloudDocs/CosmicDawn/T2D2 Model/STAT_DATA/CORR_DATA/one_Tb_z{}_size{}.npy".format(z, one_d_size))
+print("one_rho {}".format(one_rho))
+print("one_Tb {}".format(one_Tb))
 
 # log likelihood function
-test1D = DensErr(15, actual_rho, actual_Tb, cov_likelihood, cov_prior, 1, 1, epsilon=0, actual_rhos=actual_rho, pyMC3=True, no_prior_uncorr=False, log_norm=False)
+test1D = DensErr(z, [0,0], one_Tb, cov_likelihood, cov_prior, sigma_D, sigma_T, epsilon=0, actual_rhos=[0,0], pyMC3=True, no_prior_uncorr=True, log_norm=False)
 
 def gauss_likelihood(prm):
     """
     A Gaussian log-likelihood function for a model with parameters given in prm
     """
-    # rho_vec = np.vstack(np.asarray(prm))
-    # T_vec = np.vstack(Tarr)
+    print("test1D.numeric_posterior(prm) {}".format(test1D.numeric_posterior(prm)))
     logp, grads = test1D.numeric_posterior(prm)
+    # print("grads {}".format(grads))
     return logp
 
 def gradients(theta):
     logp, grads = test1D.numeric_posterior(theta)
+    # print(grads)
     return grads
 
 # define a theano Op for our gradient
@@ -126,49 +153,46 @@ class LogLikeWithGrad(tt.Op):
         theta, = inputs  # our parameters
         return [g[0]*self.logpgrad(theta)]
 
-ndraws = 100  # number of draws from the distribution
-nburn = 10   # number of "burn-in points" (which we'll discard)
-#
-# ndim = 3
-# Tarr = [10, 10, 10]
-# sigma_d = 10
-# sigma_a = 0.2
+ndraws = 1000  # number of draws from the distribution
+nburn = 100 # number of "burn-in points" (which we'll discard)
 
-# cov = np.abs(datasets.make_spd_matrix(ndim)*10) # TODO: change this so change the prior, don't generate this randomly
-# cov = np.asarray([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
-# create our Op
+
 logl = LogLikeWithGrad(gauss_likelihood)
 
 
 # test the gradient Op by direct call
 theano.config.compute_test_value = "ignore"
 theano.config.exception_verbosity = "high"
-#
-# var = tt.dvector()
-# test_grad_op = LogLikeGrad(Tarr, cov)
-# test_grad_op_func = theano.function([var], test_grad_op(var))
-# grad_vals = test_grad_op_func([1, 2, 3])
-
-# print('Gradient returned by "LogLikeGrad": {}'.format(grad_vals))
 
 with pm.Model():
     params = []
-    # params.append(pm.Normal('alpha', mu=0, sigma=sigma_a))
-    for i in range(one_d_size):
-        params.append(pm.Uniform('d_{}'.format(i), lower=-1, upper=10,))
+    starts = {}
 
-    # for n in range(ndim):
-    #     params.append(pm.Normal('d_{}'.format(n), mu=0, sigma=sigma_d))
+    for i in range(one_d_size):
+        # param = one_rho[i] + np.random.randn()
+        # params.append(pm.Uniform('d_{}'.format(i), lower=-1, upper=3, ))
+        params.append(pm.Bound(pm.Normal, lower=-1.0)('d_{}'.format(i), mu=0.0, sigma=1.0))
+        # params.append(pm.Normal('d_{}'.format(i), mu=0, sigma=10))
+        # if one_Tb[i] == 0:
+        # else:
+        #     params.append(pm.Uniform('d_{}'.format(i), lower=-1, upper=3, ))
+        # param = one_rho[i] + np.random.randn()
+
+        # starts['d_{}'.format(i)] = 0
+
+        # if param < -1:
+        #     param = -1
+    # print(starts)
+
     prm = tt.as_tensor_variable(params)
 
     # use a DensityDist (use a lamdba function to "call" the Op)
     pm.DensityDist('likelihood', lambda v: logl(v), observed={'v': prm})
-    trace = pm.sample(ndraws, tune=nburn, cores=1)
-    pm.save_trace()
-    # samples_pymc3 = np.vstack(trace['d_0']).T
 
-    samples_pymc3 = np.vstack((trace['d_0'], trace['d_1'], trace['d_2'], trace['d_3'], trace['d_4'], trace['d_5'], trace['d_6'], trace['d_7'])).T
+    trace = pm.sample(ndraws, tune=nburn, cores=1, start=starts)
+    pm.save_trace(trace, directory="/Users/sabrinaberger/Library/Mobile Documents/com~apple~CloudDocs/CosmicDawn/T2D2 Model/STAT_DATA/TRACES/z_{}_{}.trace".format(z, one_d_size), overwrite=True)
 
-fig = corner.corner(samples_pymc3, labels=["d_0", "d_1", "d_2", "d_3", "d_4", "d_5", "d_6", "d_7"])
-plt.show()
+# samples_pymc3 = np.vstack((trace['d_0'], trace['d_1'], trace['d_2'], trace['d_3'], trace['d_4'], trace['d_5'], trace['d_6'], trace['d_7'])).T
+# fig = corner.corner(samples_pymc3, labels=["d_0", "d_1", "d_2", "d_3", "d_4", "d_5", "d_6", "d_7"])
+# plt.show()
 

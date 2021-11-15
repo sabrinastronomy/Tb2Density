@@ -210,6 +210,8 @@ class DensErr(Dens2bBatt):
 
 
     def numeric_posterior(self, prm):
+
+        print("currently being tried: {}".format(prm))
         # LOGGED
         if np.min(prm) < -1:
             return -np.inf
@@ -240,16 +242,15 @@ class DensErr(Dens2bBatt):
             trans_X = (-0.5) * (Tb - self.Tarr).T
             trans_X_C = np.dot(trans_X, np.linalg.inv(self.cov_likelihood))
             trans_X_C_X = np.dot(trans_X_C, (Tb - self.Tarr))
-            print("trans_X_C_X {}".format(trans_X_C_X))
+            # print("trans_X_C_X {}".format(trans_X_C_X))
 
             c = np.linalg.det(self.cov_likelihood)
-            print("det cov likelihood {}".format(c))
+            # print("det cov likelihood {}".format(c))
             prefactor_likelihood = np.log(1 / (np.sqrt(2 * np.pi) * c) ** len(self.Tarr))
-            print("prefactor_likelihood {}".format(prefactor_likelihood))
+            # print("prefactor_likelihood {}".format(prefactor_likelihood))
 
             prefactor = (prefactor_likelihood + prefactor_prior)
             logp = prefactor + (prior_rhos + trans_X_C_X)
-
         # Keeping track of sample we're on
         global i
         i = i + 1
@@ -261,6 +262,8 @@ class DensErr(Dens2bBatt):
         elif self.pyHMC:
             return logp, self.get_gradients(prm)
         elif self.pyMC3:
+            print("logp: {}".format(logp))
+            print("gradients: {}".format(self.get_gradients(prm)))
             return logp, self.get_gradients(prm)
         else:
             return logp
