@@ -11,7 +11,7 @@ import corner
 az.style.use('arviz-darkgrid')
 
 z = 9
-one_d_size = ndim = 64
+one_d_size = ndim = 16
 mu, sigma_T, sigma_D = 0, 1, 1
 ones = np.ones(one_d_size)
 cov = cov_prior = np.diag(ones)
@@ -34,9 +34,9 @@ for i in range(np.shape(cov_prior)[0]):
 x = np.random.randn(one_d_size)
 L = np.linalg.cholesky(cov_prior)
 correlated_vars = np.dot(L, x)
-# one_rho = log_norm_correlated_density = np.exp(correlated_vars) - 1
-# dens2Tb = Dens2bBatt(one_rho, 1, z, one_d=True)
-# one_Tb = dens2Tb.temp_brightness
+one_rho = log_norm_correlated_density = np.exp(correlated_vars) - 1
+dens2Tb = Dens2bBatt(one_rho, 1, z, one_d=True)
+one_Tb = dens2Tb.temp_brightness
 
 
 
@@ -49,8 +49,8 @@ correlated_vars = np.dot(L, x)
 # one_rho = actual_rho = line_rho[:one_d_size]
 # one_Tb = actual_Tb = line_Tb[:one_d_size]
 
-one_rho = np.load("/Users/sabrinaberger/Library/Mobile Documents/com~apple~CloudDocs/CosmicDawn/T2D2 Model/STAT_DATA/CORR_DATA/one_rho_z{}_size{}.npy".format(z, one_d_size))
-one_Tb = np.load("/Users/sabrinaberger/Library/Mobile Documents/com~apple~CloudDocs/CosmicDawn/T2D2 Model/STAT_DATA/CORR_DATA/one_Tb_z{}_size{}.npy".format(z, one_d_size))
+np.save("/Users/sabrinaberger/Library/Mobile Documents/com~apple~CloudDocs/CosmicDawn/T2D2 Model/STAT_DATA/CORR_DATA/one_rho_z{}_size{}.npy".format(z, one_d_size), one_rho)
+np.save("/Users/sabrinaberger/Library/Mobile Documents/com~apple~CloudDocs/CosmicDawn/T2D2 Model/STAT_DATA/CORR_DATA/one_Tb_z{}_size{}.npy".format(z, one_d_size), one_Tb)
 print("one_rho {}".format(one_rho))
 print("one_Tb {}".format(one_Tb))
 
@@ -153,7 +153,7 @@ class LogLikeWithGrad(tt.Op):
         theta, = inputs  # our parameters
         return [g[0]*self.logpgrad(theta)]
 
-ndraws = 1000  # number of draws from the distribution
+ndraws = 200  # number of draws from the distribution
 nburn = 100 # number of "burn-in points" (which we'll discard)
 
 
@@ -167,29 +167,26 @@ theano.config.exception_verbosity = "high"
 with pm.Model():
     params = []
     starts = {}
+    starts_arr = []
 
     for i in range(one_d_size):
         # param = one_rho[i] + np.random.randn()
         # params.append(pm.Uniform('d_{}'.format(i), lower=-1, upper=3, ))
-        params.append(pm.Bound(pm.Normal, lower=-1.0)('d_{}'.format(i), mu=0.0, sigma=1.0))
-        # params.append(pm.Normal('d_{}'.format(i), mu=0, sigma=10))
-        # if one_Tb[i] == 0:
-        # else:
-        #     params.append(pm.Uniform('d_{}'.format(i), lower=-1, upper=3, ))
-        # param = one_rho[i] + np.random.randn()
+        params.append(pm.Bound(pm.Normal, lower=-1.0)('d_{}'.format(i), mu=0.0, sigma=4.0))
+        start = 0
+        if one_Tb[i] == 0:
+            start = one_rho[i] + np.random.randn()
+            starts['d_{}'.format(i)] = start
+        starts_arr.append(start)
 
-        # starts['d_{}'.format(i)] = 0
-
-        # if param < -1:
-        #     param = -1
-    # print(starts)
+    np.save("/Users/sabrinaberger/Library/Mobile Documents/com~apple~CloudDocs/CosmicDawn/T2D2 Model/STAT_DATA/CORR_DATA/inital_{}_{}.npy".format(z, one_d_size), starts_arr)
 
     prm = tt.as_tensor_variable(params)
 
     # use a DensityDist (use a lamdba function to "call" the Op)
     pm.DensityDist('likelihood', lambda v: logl(v), observed={'v': prm})
 
-    trace = pm.sample(ndraws, tune=nburn, cores=1, start=starts)
+    trace = pm.sample(ndraws, tune=nburn, cores=4, start=starts)
     pm.save_trace(trace, directory="/Users/sabrinaberger/Library/Mobile Documents/com~apple~CloudDocs/CosmicDawn/T2D2 Model/STAT_DATA/TRACES/z_{}_{}.trace".format(z, one_d_size), overwrite=True)
 
 # samples_pymc3 = np.vstack((trace['d_0'], trace['d_1'], trace['d_2'], trace['d_3'], trace['d_4'], trace['d_5'], trace['d_6'], trace['d_7'])).T
